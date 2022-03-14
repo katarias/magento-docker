@@ -1,0 +1,135 @@
+version: "3.7"
+services:
+  nginx8001:
+    image: nginx:latest
+    container_name: nginx8001
+    volumes:
+      - "./magento:/var/www/magento"
+      - ./nginx/nginx8001.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/nginx.conf.sample:/etc/nginx/conf.d/nginx.conf.sample
+    expose:
+      - 8001
+    depends_on:
+      - mysql
+      - redis
+      - elasticsearch
+      - php
+    networks:
+      - magento2-network
+
+  
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    volumes:
+      - "./magento:/var/www/magento"
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./nginx/nginx.conf.sample:/etc/nginx/conf.d/nginx.conf.sample
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - mysql
+      - redis
+      - elasticsearch
+      - php
+      - varnish
+    networks:
+      - magento2-network
+
+  
+  php:
+    build: ./php
+    container_name: php
+    expose:
+      - 9000
+    volumes:
+      - "./magento:/var/www/magento"
+      - "./php/php.ini:/usr/local/etc/php/conf.d/php.ini"
+    env_file:
+      - ./.env
+    networks:
+      - magento2-network
+
+
+  redis:
+    image: redis:6.0
+    container_name: redis
+    restart: always
+    networks: 
+      - magento2-network
+    depends_on:
+      - php
+
+
+  varnish:
+    build: ./varnish
+    container_name: varnish
+    ports:
+      - "6081:6081"
+    volumes:
+      - "./varnish/default.vcl:/etc/varnish/default.vcl"
+      - "./varnish/varnish.secret:/etc/varnish/secret"
+    environment:
+      CACHE_SIZE: 64M
+      VARNISH_LOGGING_ENABLED: "true"
+    depends_on:
+      - nginx8001
+    networks: 
+      - magento2-network
+
+
+  elasticsearch:
+    build: ./elasticsearch
+    container_name: elasticsearch
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    environment: 
+      discovery.type: single-node
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+      bootstrap.memory_lock: "true"
+    expose:
+      - 9200 
+    volumes: 
+      - "${PROJECT_DIR}/elasticsearch:/var/lib/elasticsearch/esdata1"
+    networks: 
+      - magento2-network
+    depends_on:
+      - php
+
+
+  mysql:
+    image: mariadb:10.4
+    container_name: mysql
+    restart: always
+    environment: 
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE}"
+      MYSQL_USER: "${MYSQL_USER}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+    volumes: 
+      - "${PROJECT_DIR}/mysql:/var/lib/mysql"
+      - "./magento:/var/www/magento"
+    networks: 
+      - magento2-network
+
+
+  phpmyadmin:
+    image: arm64v8/phpmyadmin
+    container_name: phpmyadmin
+    environment: 
+      PMA_HOST: mysql
+      PMA_ABSOLUTE_URI: "${PMA_ABSOLUTE_URI}"
+    expose: 
+        - 80
+    networks: 
+      - magento2-network
+    depends_on: 
+      - mysql
+
+
+networks: 
+  magento2-network:
+    name: magento2-network
